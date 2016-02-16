@@ -1,0 +1,145 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Mon Feb 15 09:42:14 2016
+
+@author: guyko81
+"""
+
+import pandas as pd
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error
+import random
+import numpy as np
+
+titanic = pd.read_csv("C:/Fuzzy_tree/titanic3.csv")
+titanic.fillna(random.randint(0,100), inplace=True)
+titanic['nul'] = 0
+train_var = ['pclass','sex','age','sibsp','parch','fare']
+X_train = titanic[train_var].as_matrix()
+y_train = titanic['survived'].as_matrix()
+
+rules = []
+
+rf = RandomForestRegressor(n_estimators=200, criterion='mse', max_depth=1)
+
+thresholds = np.zeros((200,X_train.shape[1]))
+lefts = np.zeros((200,X_train.shape[1]))
+rights = np.zeros((200,X_train.shape[1]))
+thresholds_25 = np.zeros(X_train.shape[1])
+thresholds_50 = np.zeros(X_train.shape[1])
+thresholds_75 = np.zeros(X_train.shape[1])
+err = np.zeros(X_train.shape[1])
+left_value = np.zeros(X_train.shape[1])
+mid_value1 = np.zeros(X_train.shape[1])
+mid_value2 = np.zeros(X_train.shape[1])
+right_value = np.zeros(X_train.shape[1])
+
+def prediction(data,ruleset):
+    z = ruleset[0]
+    """
+    #LINEAR
+    pred = np.where(((data[:,z]<=ruleset[2]) & (data[:,z]>ruleset[1])),
+                    (1-(data[:,z]-ruleset[1])/(ruleset[2]-ruleset[1]))*left_value[z]+
+                    (data[:,z]-ruleset[1])/(ruleset[2]-ruleset[1])*(left_value[z]+right_value[z])/2.,pred)
+    pred = np.where(((data[:,z]<=ruleset[3]) & (data[:,z]>ruleset[2])),
+                    (data[:,z]-ruleset[2])/(ruleset[3]-ruleset[2])*right_value[z]+
+                    (1-(data[:,z]-ruleset[2])/(ruleset[3]-ruleset[2]))*(left_value[z]+right_value[z])/2.,pred)
+    """
+    """
+    #SIN WEIGHTED
+    pred = np.where(((data[:,z]<=ruleset[2]) & (data[:,z]>ruleset[1])),
+                    np.sin((1-(data[:,z]-ruleset[1])/(ruleset[2]-ruleset[1]))*np.pi/2.)*left_value[z]+
+                    (1-np.sin((1-(data[:,z]-ruleset[1])/(ruleset[2]-ruleset[1]))*np.pi/2.))*(left_value[z]*(ruleset[3]-ruleset[2])/(ruleset[3]-ruleset[1])+right_value[z]*(ruleset[2]-ruleset[1])/(ruleset[3]-ruleset[1])),pred)
+    pred = np.where(((data[:,z]<=ruleset[3]) & (data[:,z]>ruleset[2])),
+                    (1-np.sin(np.pi/2.+(1-(data[:,z]-ruleset[2])/(ruleset[3]-ruleset[2]))*np.pi/2.))*(left_value[z]*(ruleset[3]-ruleset[2])/(ruleset[3]-ruleset[1])+right_value[z]*(ruleset[2]-ruleset[1])/(ruleset[3]-ruleset[1]))+
+                    np.sin(np.pi/2.+(1-(data[:,z]-ruleset[2])/(ruleset[3]-ruleset[2]))*np.pi/2.)*right_value[z],pred)
+    """
+    
+    #SIN
+    pred = np.zeros(data.shape[0])
+    pred = np.where(((data[:,z]<=ruleset[2]) & (data[:,z]>ruleset[1])),
+                    np.sin((1-(data[:,z]-ruleset[1])/(ruleset[2]-ruleset[1]))*np.pi/2.)*left_value[z]+
+                    (1-np.sin((1-(data[:,z]-ruleset[1])/(ruleset[2]-ruleset[1]))*np.pi/2.))*(left_value[z]+right_value[z])/2.,pred)
+    pred = np.where(((data[:,z]<=ruleset[3]) & (data[:,z]>ruleset[2])),
+                    (1-np.sin(np.pi/2.+(1-(data[:,z]-ruleset[2])/(ruleset[3]-ruleset[2]))*np.pi/2.))*(left_value[z]+right_value[z])/2.+
+                    np.sin(np.pi/2.+(1-(data[:,z]-ruleset[2])/(ruleset[3]-ruleset[2]))*np.pi/2.)*right_value[z],pred)
+    
+    pred = np.where(data[:,z]<=ruleset[1],left_value[z],pred)
+    pred = np.where(data[:,z]>ruleset[3],right_value[z],pred)
+    if ruleset[1] == ruleset[2]:
+        pred = np.where(data[:,z]<=ruleset[2],left_value[z],pred)
+    if ruleset[2] == ruleset[3]:
+        pred = np.where(data[:,z]>ruleset[2],right_value[z],pred)
+    
+    cut = np.zeros(data.shape[1])
+    cut = np.where(data[:,z]<=ruleset[2],0,1)
+    return pred, cut    
+
+#for z in range(0,X_train.shape[1]):
+for z in range(2,3):
+    variables = ['nul',train_var[z]]
+    X_df = titanic[variables]
+    X = titanic[variables].as_matrix()
+    tr = rf.fit(X,y_train)
+    
+    
+    for i in range(0,200):
+        thresholds[i,z] = rf[i].tree_.threshold[0]
+        lefts[i,z] = np.reshape(rf[i].tree_.value[1],1)
+        rights[i,z] = np.reshape(rf[i].tree_.value[2],1)
+    
+    thresholds_25[z] = np.percentile(thresholds[:,z], 0)
+    thresholds_50[z] = np.percentile(thresholds[:,z], 50)
+    thresholds_75[z] = np.percentile(thresholds[:,z], 100)
+    
+    left_value[z] = np.mean(y_train[np.where(X_train[:,z]<=thresholds_25[z])])
+    mid_value1[z] = np.mean(y_train[np.where(X_train[:,z]<=thresholds_50[z])])
+    mid_value2[z] = np.mean(y_train[np.where(X_train[:,z]>thresholds_50[z])])
+    right_value[z] = np.mean(y_train[np.where(X_train[:,z]>thresholds_75[z])])
+    
+    pred = np.zeros(y_train.shape[0])
+    
+    """
+    #LINEAR
+    pred = np.where(((X_train[:,z]<=thresholds_50[z]) & (X_train[:,z]>thresholds_25[z])),
+                    (1-(X_train[:,z]-thresholds_25[z])/(thresholds_50[z]-thresholds_25[z]))*left_value[z]+
+                    (X_train[:,z]-thresholds_25[z])/(thresholds_50[z]-thresholds_25[z])*(left_value[z]+right_value[z])/2.,pred)
+    pred = np.where(((X_train[:,z]<=thresholds_75[z]) & (X_train[:,z]>thresholds_50[z])),
+                    (X_train[:,z]-thresholds_50[z])/(thresholds_75[z]-thresholds_50[z])*right_value[z]+
+                    (1-(X_train[:,z]-thresholds_50[z])/(thresholds_75[z]-thresholds_50[z]))*(left_value[z]+right_value[z])/2.,pred)
+    """
+    """
+    #SIN WEIGHTED
+    pred = np.where(((X_train[:,z]<=thresholds_50[z]) & (X_train[:,z]>thresholds_25[z])),
+                    np.sin((1-(X_train[:,z]-thresholds_25[z])/(thresholds_50[z]-thresholds_25[z]))*np.pi/2.)*left_value[z]+
+                    (1-np.sin((1-(X_train[:,z]-thresholds_25[z])/(thresholds_50[z]-thresholds_25[z]))*np.pi/2.))*(left_value[z]*(thresholds_75[z]-thresholds_50[z])/(thresholds_75[z]-thresholds_25[z])+right_value[z]*(thresholds_50[z]-thresholds_25[z])/(thresholds_75[z]-thresholds_25[z])),pred)
+    pred = np.where(((X_train[:,z]<=thresholds_75[z]) & (X_train[:,z]>thresholds_50[z])),
+                    (1-np.sin(np.pi/2.+(1-(X_train[:,z]-thresholds_50[z])/(thresholds_75[z]-thresholds_50[z]))*np.pi/2.))*(left_value[z]*(thresholds_75[z]-thresholds_50[z])/(thresholds_75[z]-thresholds_25[z])+right_value[z]*(thresholds_50[z]-thresholds_25[z])/(thresholds_75[z]-thresholds_25[z]))+
+                    np.sin(np.pi/2.+(1-(X_train[:,z]-thresholds_50[z])/(thresholds_75[z]-thresholds_50[z]))*np.pi/2.)*right_value[z],pred)
+    """
+    
+    #SIN
+    pred = np.where(((X_train[:,z]<=thresholds_50[z]) & (X_train[:,z]>thresholds_25[z])),
+                    np.sin((1-(X_train[:,z]-thresholds_25[z])/(thresholds_50[z]-thresholds_25[z]))*np.pi/2.)*left_value[z]+
+                    (1-np.sin((1-(X_train[:,z]-thresholds_25[z])/(thresholds_50[z]-thresholds_25[z]))*np.pi/2.))*(left_value[z]+right_value[z])/2.,pred)
+    pred = np.where(((X_train[:,z]<=thresholds_75[z]) & (X_train[:,z]>thresholds_50[z])),
+                    (1-np.sin(np.pi/2.+(1-(X_train[:,z]-thresholds_50[z])/(thresholds_75[z]-thresholds_50[z]))*np.pi/2.))*(left_value[z]+right_value[z])/2.+
+                    np.sin(np.pi/2.+(1-(X_train[:,z]-thresholds_50[z])/(thresholds_75[z]-thresholds_50[z]))*np.pi/2.)*right_value[z],pred)
+    
+    pred = np.where(X_train[:,z]<=thresholds_25[z],left_value[z],pred)
+    pred = np.where(X_train[:,z]>thresholds_75[z],right_value[z],pred)
+    if thresholds_25[z] == thresholds_50[z]:
+        pred = np.where(X_train[:,z]<=thresholds_50[z],left_value[z],pred)
+    if thresholds_50[z] == thresholds_75[z]:
+        pred = np.where(X_train[:,z]>thresholds_50[z],right_value[z],pred)
+    err[z] = mean_squared_error(y_train, pred)
+min_err_idx = np.argmin(err)
+rules.append([min_err_idx,
+             thresholds_25[min_err_idx],
+             thresholds_50[min_err_idx],
+             thresholds_75[min_err_idx],
+             train_var[min_err_idx]])
+
+
+pr, cut1 = prediction(X_train,rules[0])
+
